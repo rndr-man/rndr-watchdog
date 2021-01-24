@@ -1,8 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.1.0"
-
+$Release = "v0.2.0"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -25,6 +24,8 @@ $Release = "v0.1.0"
 Set-Location -Path $PSScriptRoot
 $currentPath = $PSScriptRoot
 
+# Temporary value. Logfile name will get overwritten by user config
+$logFile = "$currentPath\RNDR_Watchdog.log"
 
 # Main function to launch the RNDR client
 Function Launch-RNDR-Client {
@@ -50,10 +51,9 @@ Function Launch-RNDR-Client {
         else
         {
             Add-Logfile-Entry "Cannot start RNDR because file does not exist. Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand"
-            Write-Host (Get-Date) : Cannot start RNDR because file does not exist. Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand
+            Write-Host  -ForegroundColor Red (Get-Date) : Cannot start RNDR because file does not exist. 
+            Write-Host (Get-Date) : Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand
         }
-
-        Start-Process $RNDRClientLaunchCommand -WindowStyle Minimize
 
         $global:RNDRStartDate = Get-Date
 
@@ -200,7 +200,8 @@ Function Launch-Dual-Workload {
         else
         {
             Add-Logfile-Entry "Cannot start Dual because file does not exist. Please configure DualLauchCommand in watchdog correctly. $DualLauchCommand"
-            Write-Host (Get-Date) : Cannot start Dual because file does not exist. Please configure DualLauchCommand in watchdog correctly. $DualLauchCommand
+            Write-Host  -ForegroundColor Red (Get-Date) : Cannot start Dual because file does not exist. 
+            Write-Host (Get-Date) : Please configure RNDRLauchCommand in watchdog correctly. $DualLauchCommand
         }
         #
         #
@@ -224,23 +225,29 @@ Function Stop-Dual-Workload {
     #
     #
     # Add your code here how to stop your dual workload. 
-    if($DualProcessName -eq "T-REX")
+    if($DualWebAPIShutdownCommand)
     {
-        # This example of a clean shutdown only works for T-REX mining software which provides a webserver API.
-        try{$response = (Invoke-RestMethod -Uri http://localhost:4067/control?command=shutdown)}catch{$_.Exception.Response.StatusCode.Value__}}
-        
-        # Here is an example how to use the API of the crypto mining software Awesome Miner. Make sure you set the correct ID miners/[ID]?action=stop. Also change the "T-REX" above to match your $DualProcessName.
-        #try{$response = (Invoke-RestMethod -Uri http://localhost:17790/api/miners/1?action=stop)}catch{$_.Exception.Response.StatusCode.Value__}}
+        # If the user has configured a WebAPI command try to call it
+        try{$response = (Invoke-RestMethod -Uri $DualWebAPIShutdownCommand)}catch{$_.Exception.Response.StatusCode.Value__}
 
+        # Wait
+        Start-Sleep -Seconds $sleepDualShutdown
+    }    
     else
     {
-        # If you don't use T-REX
-        # Try a graceful shutdown
-        if ($DualProcess.Responding){$DualProcess.CloseMainWindow() | Out-Null}
+        # If there is no WebAPI try a graceful shutdown
+        if ($DualProcess.Responding)
+        {
+            $DualProcess.CloseMainWindow() | Out-Null
+
+            # Wait
+            Start-Sleep -Seconds $sleepDualShutdown        
+        }
         
-        # And for the case this has not worked send a stop-process to kill any remaining Dual process (same as killing a process in taskmanager)
-        Stop-Processes($DualProcessName)
     }
+    
+    # And for the case this has not worked send a stop-process to kill any remaining Dual process (same as killing a process in taskmanager)
+    Stop-Processes($DualProcessName)
     #
     #
     # =====
@@ -272,7 +279,7 @@ Function Check-Dual-Workload-Running {
     # ===== Add your code here ====
     #
     #
-    #Add your code here to check if the dual workload is currently running. Returns $true or $false.
+    #Add your code here to check if the dual workload is currently running. The implementation does this via process name. Returns $true or $false.
     (Get-Process -Name $DualProcessName -ErrorAction SilentlyContinue) -ne $null
     #
     #
@@ -367,6 +374,8 @@ Function Download-Latest-Watchdog {
     Remove-Item $currentPath\$WatchdogGithubRepoName -Force -Recurse -ErrorAction SilentlyContinue
     Move-Item $currentPath\$WatchdogGithubRepoName-* $currentPath\$WatchdogGithubRepoName -Force
 
+    Add-Logfile-Entry "--- Latest Watchdog version $tag downloaded ---"
+
 }
 
 
@@ -377,14 +386,16 @@ Function Fix-Defect-Userconfig {
     Write-Host
 
     # Delay startup for system to complete booting when using watchdog with autostart 
-    Write-Host "Userconfig RNDR_Watchdog_Userconfig.ini cannot be read."
-    choice /c QD /n /m "Press D to replace with default config or Q to quit application."
+    Write-Host -ForegroundColor Red "Error: Userconfig RNDR_Watchdog_Userconfig.ini cannot be read or is invalid."
+    Write-Host
+    choice /c QD /n /m "Press D to replace with Default config and latest Watchdog version or Q to Quit application."
 
     # If user pressed D start update of the application
     if ($LASTEXITCODE -eq 2)
     {
         Write-Host Updating Watchdog and replacing userconfig with default...
 
+        # Get the latest version
         Download-Latest-Watchdog
 
         # Overwrite the script RNDR_Watchdog_DualUse.ps1 with the latest version
@@ -396,12 +407,17 @@ Function Fix-Defect-Userconfig {
         # Overwrite the RNDR_Watchdog_Userconfig.ini with the lastest version
         Copy-Item $currentPath\$WatchdogGithubRepoName\RNDR_Watchdog_Userconfig.ini $currentPath\RNDR_Watchdog_Userconfig.ini -Force
 
+        Add-Logfile-Entry "--- Replaced user config with default ---"
+        Add-Logfile-Entry "Please edit the file RNDR_Watchdog_Userconfig.ini before launching the application again."
+        Add-Logfile-Entry "A backup of your old config has been saved as RNDR_Watchdog_Userconfig.bak."
+
         Write-Host
         Write-Host The userconfig has been replaced.
         Write-Host
         Write-Host Please edit the file RNDR_Watchdog_Userconfig.ini before launching the application again.
         Write-Host A backup of your old config has been saved as RNDR_Watchdog_Userconfig.bak.
-        Write-Host Exiting the Watchdog.  -NoNewline
+        Write-Host
+        Write-Host Exiting the Watchdog.
         pause
     }
     exit
@@ -490,10 +506,33 @@ $StartsAsAdmin = if(($WatchdogConfig["watchdog"]["StartAsAdmin"]) -eq "true"){$t
 # Elevate administrator rights and set same folder location.
 if ($StartsAsAdmin -and !([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] "Administrator")) {Start-Process powershell.exe "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`" " -Verb RunAs; exit }else{}
 
+# Initialize other application variables
+$RNDRClientLogs = "$env:localappdata\OtoyRndrNetwork\rndr_log.txt"
+$CurrentActivity = "Startup"
+$DualRuntime = 0
+$RNDRRuntime = 0
+$DualRuntimeCounter = 0
+$RNDRRuntimeCounter = 0
+$global:RNDRRestarts = 0
+$global:DualStarts = 0
+$alltimeRNDRRestarts = 0
+$alltimeDualStarts = 0
+$StartDate = Get-Date
+$alltimeWatchdog = 0
+$alltimeRNDR = 0
+$alltimeDual = 0
+$global:RNDRStartDate = $StartDate
+$global:DualStartDate = $StartDate
+$global:RNDRNotRespondedSince = $null
+$DualProcess = $null
+$tag = 0
+
 # Initialize user variables from the .ini file
 try{
     # [watchdog]
     $UseOverclocking = if(($WatchdogConfig["watchdog"]["UseOverclocking"]) -eq "true"){$true}else{$false}
+    $WindowWidth = $WatchdogConfig["watchdog"]["WindowWidth"]
+    $WindowHeight = $WatchdogConfig["watchdog"]["WindowHeight"]
 
     # [rndr_app]
     $RNDRClientLaunchCommand = $WatchdogConfig["rndr_app"]["RNDRClientLaunchCommand"]
@@ -504,6 +543,7 @@ try{
     $DualLauchCommand = $WatchdogConfig["dual_app"]["DualLauchCommand"]
     if (!(Test-Path $DualLauchCommand)){$DualLauchCommand = "$currentPath\$DualLauchCommand"}
     $DualProcessName = $WatchdogConfig["dual_app"]["DualProcessName"]
+    $DualWebAPIShutdownCommand = $WatchdogConfig["dual_app"]["DualWebAPIShutdownCommand"]
 
     # [overclocking_app]
     $OverclockingApp = $WatchdogConfig["overclocking_app"]["OverclockingApp"]
@@ -531,26 +571,6 @@ catch
     Fix-Defect-Userconfig
 }
 
-# Initialize other application variables
-$RNDRClientLogs = "$env:localappdata\OtoyRndrNetwork\rndr_log.txt" 
-$CurrentActivity = "Startup"
-$DualRuntime = 0
-$RNDRRuntime = 0
-$DualRuntimeCounter = 0
-$RNDRRuntimeCounter = 0
-$global:RNDRRestarts = 0
-$global:DualStarts = 0
-$alltimeRNDRRestarts = 0
-$alltimeDualStarts = 0
-$StartDate = Get-Date
-$alltimeWatchdog = 0
-$alltimeRNDR = 0
-$alltimeDual = 0
-$global:RNDRStartDate = $StartDate
-$global:DualStartDate = $StartDate
-$global:RNDRNotRespondedSince = $null
-$DualProcess = $null
-
 # Read all-time values from windows registry
 $alltimeWatchdog = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name Runtime_Watchdog -errorAction SilentlyContinue).Runtime_Watchdog
 $alltimeRNDR = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name Runtime_RNDR -errorAction SilentlyContinue).Runtime_RNDR
@@ -559,8 +579,8 @@ $alltimeRNDRRestarts = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTW
 $alltimeDualStarts = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name Starts_Dual -errorAction SilentlyContinue).Starts_Dual
 
 [console]::Title = "RNDR Watchdog (Dual Use Version)"
-[console]::WindowWidth=75
-[console]::WindowHeight= 35
+[console]::WindowWidth= $WindowWidth
+[console]::WindowHeight= $WindowHeight
 [console]::BufferWidth=[console]::WindowWidth
 
 Write-Host RNDR Watchdog Started at
@@ -573,7 +593,9 @@ $tag = (Invoke-WebRequest "https://api.github.com/repos/$WatchdogGithubRepo/rele
 # If this release has a different version then a new version is available
 if ($tag -ne $Release)
 {
-    Write-Host A new version Watchdog $tag is available. Press U to update now.
+    Write-Host -ForegroundColor Red A new version Watchdog $tag is available. Press U to update now.
+    Write-Host
+    Add-Logfile-Entry "A new version Watchdog $tag is available. Please consider updating."
 }
 
 # Delay startup for system to complete booting when using watchdog with autostart 
@@ -608,7 +630,7 @@ Write-Watchdog-Status
 # Write to log file
 Add-Logfile-Entry ""
 Add-Logfile-Entry ""
-Add-Logfile-Entry "---- Watchdog started ---- "
+Add-Logfile-Entry "---- RNDR Watchdog $Release started ---- "
 
 # At startup make sure RNDR client is running 
 Launch-RNDR-Client
@@ -644,6 +666,7 @@ while ($true)
                     $global:RNDRStartDate = $null
                 
                     # Write event to log
+                    Add-Logfile-Entry ""
                     Add-Logfile-Entry "RNDR runtime - $([math]::Round($LastRun,2)) hours."
                     Add-Logfile-Entry "RNDR total runtime - $([math]::Round($RNDRRuntime,2)) hours."
                     Add-Logfile-Entry ""
