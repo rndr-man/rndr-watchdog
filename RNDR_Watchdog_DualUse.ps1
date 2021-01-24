@@ -1,7 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.2.0"
+$Release = "v0.2.1"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -318,7 +318,7 @@ Function Write-Watchdog-Status {
     Update-Registry-Runtimes 
 }
 
-
+# Helper function to add a new entry to the log file
 Function Add-Logfile-Entry {
     param(
         [parameter(Mandatory=$true)] $LogEntry
@@ -378,7 +378,7 @@ Function Download-Latest-Watchdog {
 
 }
 
-
+# If the user config file has errors the latest version is downloaded and the defect version gets replaced
 Function Fix-Defect-Userconfig {
 
     Write-Host RNDR Watchdog Started at
@@ -388,6 +388,8 @@ Function Fix-Defect-Userconfig {
     # Delay startup for system to complete booting when using watchdog with autostart 
     Write-Host -ForegroundColor Red "Error: Userconfig RNDR_Watchdog_Userconfig.ini cannot be read or is invalid."
     Write-Host
+    # ISSUE: for some reason the choice message does not show up in certain situations. Adding a redundant message as write-host.
+    Write-Host Press D to replace with Default config and latest Watchdog version or Q to Quit application.
     choice /c QD /n /m "Press D to replace with Default config and latest Watchdog version or Q to Quit application."
 
     # If user pressed D start update of the application
@@ -423,10 +425,30 @@ Function Fix-Defect-Userconfig {
     exit
 }
 
+# Helper function to check if all keys being read do exist in the user config file. If a key is missing the config file is defect or not up to date.
+Function Read-IniContent {
+
+    param(
+        [parameter(Mandatory=$true)] $Section,
+        [parameter(Mandatory=$true)] $Name
+    )
+
+
+    if ($WatchdogConfig[$Section].ContainsKey($Name))
+    {
+        Return $WatchdogConfig[$Section][$Name]
+    }
+    else
+    {
+        # Download the latest user config file and replace the defect one
+        Fix-Defect-Userconfig
+    }
+
+}
 
 
 # Helper function to read .ini files with user variables
-# Source: https://github.com/lipkau/PsIni
+# Source: https://gallery.technet.microsoft.com/scriptcenter/ea40c1ef-c856-434b-b8fb-ebd7a76e8d91
 Function Get-IniContent {  
       
     [CmdletBinding()]  
@@ -528,48 +550,44 @@ $DualProcess = $null
 $tag = 0
 
 # Initialize user variables from the .ini file
-try{
-    # [watchdog]
-    $UseOverclocking = if(($WatchdogConfig["watchdog"]["UseOverclocking"]) -eq "true"){$true}else{$false}
-    $WindowWidth = $WatchdogConfig["watchdog"]["WindowWidth"]
-    $WindowHeight = $WatchdogConfig["watchdog"]["WindowHeight"]
 
-    # [rndr_app]
-    $RNDRClientLaunchCommand = $WatchdogConfig["rndr_app"]["RNDRClientLaunchCommand"]
-    if (!(Test-Path $RNDRClientLaunchCommand)){$RNDRClientLaunchCommand = "$currentPath\$RNDRClientLaunchCommand"}
-    $RNDRProcessName = $WatchdogConfig["rndr_app"]["RNDRProcessName"]
+# [watchdog]
+$UseOverclocking = if((Read-IniContent "watchdog" "UseOverclocking" ) -eq "true"){$true}else{$false}
+$WindowWidth = Read-IniContent "watchdog" "WindowWidth" 
+$WindowHeight = Read-IniContent "watchdog" "WindowHeight" 
 
-    # [dual_app]
-    $DualLauchCommand = $WatchdogConfig["dual_app"]["DualLauchCommand"]
-    if (!(Test-Path $DualLauchCommand)){$DualLauchCommand = "$currentPath\$DualLauchCommand"}
-    $DualProcessName = $WatchdogConfig["dual_app"]["DualProcessName"]
-    $DualWebAPIShutdownCommand = $WatchdogConfig["dual_app"]["DualWebAPIShutdownCommand"]
+#  rndr_app 
+$RNDRClientLaunchCommand = Read-IniContent "rndr_app" "RNDRClientLaunchCommand" 
+if (!(Test-Path $RNDRClientLaunchCommand)){$RNDRClientLaunchCommand = "$currentPath\$RNDRClientLaunchCommand"}
+$RNDRProcessName = Read-IniContent "rndr_app" "RNDRProcessName" 
 
-    # [overclocking_app]
-    $OverclockingApp = $WatchdogConfig["overclocking_app"]["OverclockingApp"]
-    if (!(Test-Path $OverclockingApp)){$OverclockingApp = "$currentPath\$OverclockingApp"}
-    $OverclockingCommandRNDR = $WatchdogConfig["overclocking_app"]["OverclockingCommandRNDR"]
-    $OverclockingCommandDual = $WatchdogConfig["overclocking_app"]["OverclockingCommandDual"]
+#  dual_app 
+$DualLauchCommand = Read-IniContent "dual_app" "DualLauchCommand" 
+if (!(Test-Path $DualLauchCommand)){$DualLauchCommand = "$currentPath\$DualLauchCommand"}
+$DualProcessName = Read-IniContent "dual_app" "DualProcessName" 
+$DualWebAPIShutdownCommand = Read-IniContent "dual_app" "DualWebAPIShutdownCommand" 
 
-    # [logging]
-    $logFile = $WatchdogConfig["logging"]["logFile"]
-    if (!(Test-Path $logFile)){$logFile = "$currentPath\$logFile"}
+#  overclocking_app 
+$OverclockingApp = Read-IniContent "overclocking_app" "OverclockingApp" 
+if (!(Test-Path $OverclockingApp)){$OverclockingApp = "$currentPath\$OverclockingApp"}
+$OverclockingCommandRNDR = Read-IniContent "overclocking_app" "OverclockingCommandRNDR" 
+$OverclockingCommandDual = Read-IniContent "overclocking_app" "OverclockingCommandDual" 
 
-    # [timer]
-    $WatchdogWarmup = $WatchdogConfig["timer"]["WatchdogWarmup"]
-    $sleepIdle = $WatchdogConfig["timer"]["sleepIdle"]
-    $sleepBusy = $WatchdogConfig["timer"]["sleepBusy"]
-    $sleepIdleRetest = $WatchdogConfig["timer"]["sleepIdleRetest"]
-    $sleepRNDRWarmup = $WatchdogConfig["timer"]["sleepRNDRWarmup"]
-    $sleepRNDRNotResponding = $WatchdogConfig["timer"]["sleepRNDRNotResponding"]
-    $SleepDualWarmup = $WatchdogConfig["timer"]["SleepDualWarmup"]
-    $SleepDualShutdown = $WatchdogConfig["timer"]["SleepDualShutdown"]
-    $SleepKillProcess = $WatchdogConfig["timer"]["SleepKillProcess"]
-}
-catch
-{
-    Fix-Defect-Userconfig
-}
+#  logging 
+$logFile = Read-IniContent "logging" "logFile" 
+if (!(Test-Path $logFile)){$logFile = "$currentPath\$logFile"}
+
+#  timer 
+$WatchdogWarmup = Read-IniContent "timer" "WatchdogWarmup" 
+$sleepIdle = Read-IniContent "timer" "sleepIdle" 
+$sleepBusy = Read-IniContent "timer" "sleepBusy" 
+$sleepIdleRetest = Read-IniContent "timer" "sleepIdleRetest" 
+$sleepRNDRWarmup = Read-IniContent "timer" "sleepRNDRWarmup" 
+$sleepRNDRNotResponding = Read-IniContent "timer" "sleepRNDRNotResponding" 
+$SleepDualWarmup = Read-IniContent "timer" "SleepDualWarmup" 
+$SleepDualShutdown = Read-IniContent "timer" "SleepDualShutdown" 
+$SleepKillProcess = Read-IniContent "timer" "SleepKillProcess" 
+
 
 # Read all-time values from windows registry
 $alltimeWatchdog = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name Runtime_Watchdog -errorAction SilentlyContinue).Runtime_Watchdog
@@ -583,7 +601,7 @@ $alltimeDualStarts = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWAR
 [console]::WindowHeight= $WindowHeight
 [console]::BufferWidth=[console]::WindowWidth
 
-Write-Host RNDR Watchdog Started at
+Write-Host RNDR Watchdog $Release started at
 Write-Host $StartDate
 Write-Host
 
