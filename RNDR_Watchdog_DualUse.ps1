@@ -1,7 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.2.1"
+$Release = "v0.2.2"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -42,7 +42,7 @@ Function Launch-RNDR-Client {
             Add-Logfile-Entry "Overclocking set to $OverclockingCommandRNDR."
         }
 
-        Write-Host (Get-Date) : RNDR client application launched.
+        Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : RNDR client application launched.
 
         if (Test-Path $RNDRClientLaunchCommand) 
         {
@@ -51,8 +51,8 @@ Function Launch-RNDR-Client {
         else
         {
             Add-Logfile-Entry "Cannot start RNDR because file does not exist. Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand"
-            Write-Host  -ForegroundColor Red (Get-Date) : Cannot start RNDR because file does not exist. 
-            Write-Host (Get-Date) : Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand
+            Write-Host  -ForegroundColor Red (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Cannot start RNDR because file does not exist. 
+            Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand
         }
 
         $global:RNDRStartDate = Get-Date
@@ -76,7 +76,7 @@ Function Keep-RNDR-Client-Running {
     if ($RNDRProcesses -eq $null)
     {
 
-        Write-Host -ForegroundColor Red (Get-Date): RNDR client is not running. Restarting now.
+        Write-Host -ForegroundColor Red (Get-Date -format "yyyy/MM/dd hh:mm:ss") : RNDR client is not running. Restarting now.
 
         # Write to log file
         Add-Logfile-Entry "RNDR client is not running. Restarting now. See for more information $RNDRClientLogs" 
@@ -102,7 +102,7 @@ Function Keep-RNDR-Client-Running {
                 {
                     #Timestamp when client was not responding
                     $global:RNDRNotRespondedSince = Get-Date
-                    Write-Host (Get-Date) : RNDR client is not responding. Waiting grace period.
+                    Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : RNDR client is not responding. Waiting...
                     
                     # Write to log file
                     Add-Logfile-Entry "RNDR client process not responding. Waiting grace period before stopping process."
@@ -122,7 +122,7 @@ Function Keep-RNDR-Client-Running {
                     if(!$RNDRProcess.Responding)
                     {
 
-                        Write-Host (Get-Date) : RNDR client is not responding. Stopping process now.
+                        Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : RNDR client is not responding. Stopping process now.
                     
                         # Write to log file
                         Add-Logfile-Entry "RNDR client process not responding. Grace period over, stopping process now."
@@ -174,7 +174,7 @@ Function Launch-Dual-Workload {
             else
             {
                 Add-Logfile-Entry "Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp"
-                Write-Host (Get-Date) : Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp
+                Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp
             }
         }
 
@@ -200,8 +200,8 @@ Function Launch-Dual-Workload {
         else
         {
             Add-Logfile-Entry "Cannot start Dual because file does not exist. Please configure DualLauchCommand in watchdog correctly. $DualLauchCommand"
-            Write-Host  -ForegroundColor Red (Get-Date) : Cannot start Dual because file does not exist. 
-            Write-Host (Get-Date) : Please configure RNDRLauchCommand in watchdog correctly. $DualLauchCommand
+            Write-Host  -ForegroundColor Red (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Cannot start Dual because file does not exist. 
+            Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Please configure RNDRLauchCommand in watchdog correctly. $DualLauchCommand
         }
         #
         #
@@ -264,7 +264,7 @@ Function Stop-Dual-Workload {
         else
         {
             Add-Logfile-Entry "Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp"
-            Write-Host (Get-Date) : Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp
+            Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Cannot start overclocking because file does not exist. Please configure OverclockingApp in watchdog correctly. $OverclockingApp
         }
     }
 
@@ -309,7 +309,7 @@ Function Write-Watchdog-Status {
     $alltimeRNDRRestartsFormatted = '{0:#,##0}' -f ($global:RNDRRestarts + $alltimeRNDRRestarts)
     $alltimeDualStartsFormatted = '{0:#,##0}' -f ($global:DualStarts + $alltimeDualStarts)
     
-    Write-Progress -Id 1 -Activity "Current work: $CurrentActivity - $(Get-Date)" -Status "RNDR restarts $global:RNDRRestarts, alltime $alltimeRNDRRestartsFormatted - Dual starts $global:DualStarts, alltime $alltimeDualStartsFormatted"    
+    Write-Progress -Id 1 -Activity "Current work: $CurrentActivity - $(Get-Date -format "yyyy/MM/dd hh:mm:ss")" -Status "RNDR restarts $global:RNDRRestarts, alltime $alltimeRNDRRestartsFormatted - Dual starts $global:DualStarts, alltime $alltimeDualStartsFormatted"    
     Write-Progress -Id 2 -Activity "Watchdog uptime" -Status "$WatchdogFormatted, alltime $alltimeWatchdogFormatted" 
     Write-Progress -Id 3 -Activity "RNDR runtime" -Status "$RNDRFormatted, alltime $alltimeRNDRFormatted"
     Write-Progress -Id 4 -Activity "Dual runtime" -Status "$DualFormatted, alltime $alltimeDualFormatted"
@@ -330,7 +330,7 @@ Function Add-Logfile-Entry {
     } 
     else 
     {
-        Add-Content -Path $logFile -Value "$(Get-Date) - $logEntry" -Encoding UTF8
+        Add-Content -Path $logFile -Value "$(Get-Date -format "yyyy/MM/dd hh:mm:ss") - $logEntry" -Encoding UTF8
     }
 
 }
@@ -382,7 +382,7 @@ Function Download-Latest-Watchdog {
 Function Fix-Defect-Userconfig {
 
     Write-Host RNDR Watchdog Started at
-    Write-Host (Get-Date)
+    Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss")
     Write-Host
 
     # Delay startup for system to complete booting when using watchdog with autostart 
@@ -602,7 +602,7 @@ $alltimeDualStarts = (Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWAR
 [console]::BufferWidth=[console]::WindowWidth
 
 Write-Host RNDR Watchdog $Release started at
-Write-Host $StartDate
+Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss")
 Write-Host
 
 # Check tag of latest release in the Github repository
@@ -621,7 +621,7 @@ choice /c SU /n /t $WatchdogWarmup /d S /m "Waiting $WatchdogWarmup seconds. Pre
 
 # If user pressed U start update of the application
 if ($LASTEXITCODE -eq 2){
-    Write-Host (Get-Date) : Updating Watchdog and restarting.
+    Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Updating Watchdog and restarting.
     Download-Latest-Watchdog
 
     # Overwrite the script RNDR_Watchdog_DualUse.ps1 with the new version
@@ -694,7 +694,7 @@ while ($true)
                 
                 # Update timestamp when Dual started
                 $global:DualStartDate = Get-Date
-                Write-Host (Get-Date) : Dual started. RNDR idle.
+                Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Dual started. RNDR idle.
 
                 # Start Dual if not running
                 $DualProcess = Launch-Dual-Workload
@@ -702,9 +702,9 @@ while ($true)
             }
             else
             {
-                Write-Host (Get-Date): Dual start PREVENTED. RNDR not idle. 
+                Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Dual start PREVENTED. RNDR not idle. 
                 # Write event to log
-                Add-Logfile-Entry " Dual start PREVENTED. RNDR not idle."
+                Add-Logfile-Entry "Dual start PREVENTED. RNDR not idle."
             }
         }   
 
@@ -729,7 +729,7 @@ while ($true)
     if (Check-Dual-Workload-Running)
     {
         # Shutdown Dual
-        Write-Host (Get-Date) : Dual shutdown signal sent. RNDR active.
+        Write-Host (Get-Date -format "yyyy/MM/dd hh:mm:ss") : Dual shutdown signal sent. RNDR active.
         Stop-Dual-Workload
 
         # If Dual was running before then calculate runtime
