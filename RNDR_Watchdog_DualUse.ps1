@@ -1,7 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.3.0"
+$Release = "v0.3.1"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -306,13 +306,17 @@ Function Write-Watchdog-Status {
     $alltimeWatchdogFormatted = '{0:#,##0} hours' -f $([math]::Floor((New-TimeSpan -Start $StartDate).Totalhours + $alltimeWatchdog))
     $alltimeRNDRFormatted = '{0:#,##0} hours' -f $([math]::Floor($RNDRRuntimeCounter + $alltimeRNDR))
     $alltimeDualFormatted = '{0:#,##0} hours' -f $([math]::Floor($DualRuntimeCounter + $alltimeDual))
+    $percentRNDRFormatted = '{00}%' -f $([math]::Floor((($RNDRRuntimeCounter + $alltimeRNDR))/((New-TimeSpan -Start $StartDate).Totalhours + $alltimeWatchdog)*100))
+    $percentDualFormatted = '{00}%' -f $([math]::Floor((($DualRuntimeCounter + $alltimeDual))/((New-TimeSpan -Start $StartDate).Totalhours + $alltimeWatchdog)*100))
     $alltimeRNDRRestartsFormatted = '{0:#,##0}' -f ($global:RNDRRestarts + $alltimeRNDRRestarts)
     $alltimeDualStartsFormatted = '{0:#,##0}' -f ($global:DualStarts + $alltimeDualStarts)
+        
+    $alltimeRNDRJobsCompletedFormatted = '{0:#,##0} frames' -f ([convert]::ToInt32((Get-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name JOBS_COMPLETED -errorAction SilentlyContinue).JOBS_COMPLETED),10)
     
     Write-Progress -Id 1 -Activity "Current work: $CurrentActivity - $(Get-Date -format "yyyy-MM-dd HH:mm:ss")" -Status "RNDR restarts $global:RNDRRestarts, alltime $alltimeRNDRRestartsFormatted - Dual starts $global:DualStarts, alltime $alltimeDualStartsFormatted"    
     Write-Progress -Id 2 -Activity "Watchdog uptime" -Status "$WatchdogFormatted, alltime $alltimeWatchdogFormatted" 
-    Write-Progress -Id 3 -Activity "RNDR runtime" -Status "$RNDRFormatted, alltime $alltimeRNDRFormatted"
-    Write-Progress -Id 4 -Activity "Dual runtime" -Status "$DualFormatted, alltime $alltimeDualFormatted"
+    Write-Progress -Id 3 -Activity "RNDR runtime" -Status "$RNDRFormatted, alltime $alltimeRNDRFormatted ($percentRNDRFormatted) - $alltimeRNDRJobsCompletedFormatted"
+    Write-Progress -Id 4 -Activity "Dual runtime" -Status "$DualFormatted, alltime $alltimeDualFormatted ($percentDualFormatted)"
 
     # Save stats to registry
     Update-Registry-Runtimes 
