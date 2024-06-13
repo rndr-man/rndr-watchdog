@@ -1,7 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.3.1"
+$Release = "v0.4.0"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -42,6 +42,9 @@ Function Launch-RNDR-Client {
             Add-Logfile-Entry "Overclocking set to $OverclockingCommandRNDR."
         }
 
+        # Manually set the flag in Windows Registry to IDLE. In case the client has issues to start up the node can work on Dual during that time.
+        Set-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name RNDR_IDLE -errorAction SilentlyContinue -Value 1
+
         Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : RNDR client application launched.
 
         if (Test-Path $RNDRClientLaunchCommand) 
@@ -62,6 +65,7 @@ Function Launch-RNDR-Client {
  
         # Wait
         Start-Sleep -Seconds $sleepRNDRWarmup
+
    
     }
 }
@@ -80,9 +84,6 @@ Function Keep-RNDR-Client-Running {
 
         # Write to log file
         Add-Logfile-Entry "RNDR client is not running. Restarting now. See for more information $RNDRClientLogs" 
-
-        # Manually set the flag in Windows Registry to IDLE. In case the client has issues to start up the node can work on Dual during that time.
-        Set-ItemProperty -Path Registry::HKEY_CURRENT_USER\SOFTWARE\OTOY -Name RNDR_IDLE -errorAction SilentlyContinue -Value 1
 
         $global:RNDRRestarts = $global:RNDRRestarts + 1
 
@@ -316,7 +317,7 @@ Function Write-Watchdog-Status {
     Write-Progress -Id 1 -Activity "Current work: $CurrentActivity - $(Get-Date -format "yyyy-MM-dd HH:mm:ss")" -Status "RNDR restarts $global:RNDRRestarts, alltime $alltimeRNDRRestartsFormatted - Dual starts $global:DualStarts, alltime $alltimeDualStartsFormatted"    
     Write-Progress -Id 2 -Activity "Watchdog uptime" -Status "$WatchdogFormatted, alltime $alltimeWatchdogFormatted" 
     Write-Progress -Id 3 -Activity "RNDR runtime" -Status "$RNDRFormatted, alltime $alltimeRNDRFormatted ($percentRNDRFormatted) - $alltimeRNDRJobsCompletedFormatted"
-    Write-Progress -Id 4 -Activity "Dual runtime" -Status "$DualFormatted, alltime $alltimeDualFormatted ($percentDualFormatted)"
+    if(!($DualActive)){Write-Progress -Id 4 -Activity "Dual runtime" -Status "$DualFormatted, alltime $alltimeDualFormatted ($percentDualFormatted)"}
 
     # Save stats to registry
     Update-Registry-Runtimes 
@@ -605,6 +606,7 @@ $tag = 0
 # Initialize user variables from the .ini file
 
 # [watchdog]
+$DualActive = if((Read-IniContent "watchdog" "DualActive" ) -eq "true"){$true}else{$false}
 $UseOverclocking = if((Read-IniContent "watchdog" "UseOverclocking" ) -eq "true"){$true}else{$false}
 $WindowWidth = Read-IniContent "watchdog" "WindowWidth" 
 $WindowHeight = Read-IniContent "watchdog" "WindowHeight" 
@@ -729,97 +731,99 @@ Launch-RNDR-Client
 # Run as long as watchdog is open
 while ($true)
 {
-    #Loop as long as RNDR is IDLE
-    while(Check-RNDR-Client-Idle)
-    {
-        
-        $CurrentActivity = "Dual workload"
-        Write-Watchdog-Status 
-
-        # Check if Dual is not running
-        if (!(Check-Dual-Workload-Running))
-        { 
-
-            # Before launching Dual, take another break and test before starting it to avoid that RNDR is not idle anymore.
-            Start-Sleep -Seconds $sleepIdleRetest
-            
-            if (Check-RNDR-Client-Idle)
-            {
-                
-                # If RNDR was running before then calculate runtime
-                if($global:RNDRStartDate)
-                {
-                    $LastRun = (New-TimeSpan -Start $global:RNDRStartDate).Totalhours
-                    $RNDRRuntime = $RNDRRuntime + $LastRun
-                    $global:RNDRStartDate = $null
-                
-                    # Write event to log
-                    Add-Logfile-Entry ""
-                    Add-Logfile-Entry "RNDR runtime - $([math]::Round($LastRun,2)) hours."
-                    Add-Logfile-Entry "RNDR total runtime - $([math]::Round($RNDRRuntime,2)) hours."
-                    Add-Logfile-Entry ""
-                    Add-Logfile-Entry "Dual started. RNDR idle."
-                
-                }
-                
-                # Update timestamp when Dual started
-                $global:DualStartDate = Get-Date
-                Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual started. RNDR idle.
-
-                # Start Dual if not running
-                $DualProcess = Launch-Dual-Workload
-
-            }
-            else
-            {
-                Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual start PREVENTED. RNDR not idle. 
-                # Write event to log
-                Add-Logfile-Entry "Dual start PREVENTED. RNDR not idle."
-            }
-        }   
-
-        # Make sure RNDR client is still running 
-        Keep-RNDR-Client-Running
-        
-        # Wait 
-        Start-Sleep -Seconds $sleepIdle
-
-        
-        if($global:DualStartDate){$DualRuntimeCounter = $DualRuntime + (New-TimeSpan -Start $global:DualStartDate).Totalhours}
-        
-
-    }
-
-    # --- Loop exited as RNDR is no longer IDLE ----
-    
-    $CurrentActivity = "Rendering"
-    Write-Watchdog-Status
-    
-    # Check if Dual is  running
-    if (Check-Dual-Workload-Running)
-    {
-        # Shutdown Dual
-        Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual shutdown signal sent. RNDR active.
-        Stop-Dual-Workload
-
-        # If Dual was running before then calculate runtime
-        if($global:DualStartDate)
+    if ($DualActive) {
+        #Loop as long as RNDR is IDLE
+        while(Check-RNDR-Client-Idle)
         {
-            # Add last run duration to the runtime
-            $LastRun = (New-TimeSpan -Start $global:DualStartDate).Totalhours
-            $DualRuntime = $DualRuntime + $LastRun
-            $global:DualStartDate = $null
+            
+            $CurrentActivity = "Dual workload"
+            Write-Watchdog-Status 
+
+            # Check if Dual is not running
+            if (!(Check-Dual-Workload-Running))
+            { 
+
+                # Before launching Dual, take another break and test before starting it to avoid that RNDR is not idle anymore.
+                Start-Sleep -Seconds $sleepIdleRetest
+                
+                if (Check-RNDR-Client-Idle)
+                {
+                    
+                    # If RNDR was running before then calculate runtime
+                    if($global:RNDRStartDate)
+                    {
+                        $LastRun = (New-TimeSpan -Start $global:RNDRStartDate).Totalhours
+                        $RNDRRuntime = $RNDRRuntime + $LastRun
+                        $global:RNDRStartDate = $null
+                    
+                        # Write event to log
+                        Add-Logfile-Entry ""
+                        Add-Logfile-Entry "RNDR runtime - $([math]::Round($LastRun,2)) hours."
+                        Add-Logfile-Entry "RNDR total runtime - $([math]::Round($RNDRRuntime,2)) hours."
+                        Add-Logfile-Entry ""
+                        Add-Logfile-Entry "Dual started. RNDR idle."
+                    
+                    }
+                    
+                    # Update timestamp when Dual started
+                    $global:DualStartDate = Get-Date
+                    Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual started. RNDR idle.
+
+                    # Start Dual if not running
+                    $DualProcess = Launch-Dual-Workload
+
+                }
+                else
+                {
+                    Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual start PREVENTED. RNDR not idle. 
+                    # Write event to log
+                    Add-Logfile-Entry "Dual start PREVENTED. RNDR not idle."
+                }
+            }   
+
+            # Make sure RNDR client is still running 
+            Keep-RNDR-Client-Running
+            
+            # Wait 
+            Start-Sleep -Seconds $sleepIdle
+
+            
+            if($global:DualStartDate){$DualRuntimeCounter = $DualRuntime + (New-TimeSpan -Start $global:DualStartDate).Totalhours}
+            
+
         }
 
+        # --- Loop exited as RNDR is no longer IDLE ----
+        
+        $CurrentActivity = "Rendering"
+        Write-Watchdog-Status
 
-        # Write event to log
-        Add-Logfile-Entry "Dual shutdown signal sent. RNDR active."
-        Add-Logfile-Entry ""
-        Add-Logfile-Entry "Dual runtime - $([math]::Round($LastRun,2)) hours."
-        Add-Logfile-Entry "Dual total runtime - $([math]::Round($DualRuntime,2)) hours."
+        # Check if Dual is  running
+        if (Check-Dual-Workload-Running)
+        {
+            # Shutdown Dual
+            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Dual shutdown signal sent. RNDR active.
+            Stop-Dual-Workload
 
-        # Update timestamp when RNDR started
-        $global:RNDRStartDate = Get-Date
+            # If Dual was running before then calculate runtime
+            if($global:DualStartDate)
+            {
+                # Add last run duration to the runtime
+                $LastRun = (New-TimeSpan -Start $global:DualStartDate).Totalhours
+                $DualRuntime = $DualRuntime + $LastRun
+                $global:DualStartDate = $null
+            }
+
+
+            # Write event to log
+            Add-Logfile-Entry "Dual shutdown signal sent. RNDR active."
+            Add-Logfile-Entry ""
+            Add-Logfile-Entry "Dual runtime - $([math]::Round($LastRun,2)) hours."
+            Add-Logfile-Entry "Dual total runtime - $([math]::Round($DualRuntime,2)) hours."
+
+            # Update timestamp when RNDR started
+            $global:RNDRStartDate = Get-Date
+        }
     }
 
     # Make sure RNDR client is still running 
