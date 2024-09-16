@@ -53,9 +53,9 @@ Function Launch-RNDR-Client {
         }
         else
         {
-            Add-Logfile-Entry "Cannot start RNDR because file does not exist. Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand"
+            Add-Logfile-Entry "Cannot start RNDR because file does not exist. Please configure RNDRLaunchCommand in watchdog correctly. $RNDRClientLaunchCommand"
             Write-Host  -ForegroundColor Red (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Cannot start RNDR because file does not exist. 
-            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Please configure RNDRLauchCommand in watchdog correctly. $RNDRClientLaunchCommand
+            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Please configure RNDRLaunchCommand in watchdog correctly. $RNDRClientLaunchCommand
         }
 
         $global:RNDRStartDate = Get-Date
@@ -186,23 +186,23 @@ Function Launch-Dual-Workload {
         #
         #Add your code here how to start your dual workload
         #
-        if (Test-Path $DualLauchCommand) 
+        if (Test-Path $DualLaunchCommand) 
         {
             if ($StartAsAdmin) 
             {
-                $StartedProcess = Start-Process $DualLauchCommand -Verb RunAs -WindowStyle Minimized -PassThru -WorkingDirectory (Split-Path $DualLauchCommand -Parent)
+                $StartedProcess = Start-Process $DualLaunchCommand -Verb RunAs -WindowStyle Minimized -PassThru -WorkingDirectory (Split-Path $DualLaunchCommand -Parent)
             } 
             else
             {
                 #Example code if your workload requires admin rights
-                $StartedProcess = Start-Process $DualLauchCommand -WindowStyle Minimized -PassThru -WorkingDirectory (Split-Path $DualLauchCommand -Parent)
+                $StartedProcess = Start-Process $DualLaunchCommand -WindowStyle Minimized -PassThru -WorkingDirectory (Split-Path $DualLaunchCommand -Parent)
             }
         }
         else
         {
-            Add-Logfile-Entry "Cannot start Dual because file does not exist. Please configure DualLauchCommand in watchdog correctly. $DualLauchCommand"
+            Add-Logfile-Entry "Cannot start Dual because file does not exist. Please configure DualLaunchCommand in watchdog correctly. $DualLaunchCommand"
             Write-Host  -ForegroundColor Red (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Cannot start Dual because file does not exist. 
-            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Please configure RNDRLauchCommand in watchdog correctly. $DualLauchCommand
+            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : Please configure DualLaunchCommand in watchdog correctly. $DualLaunchCommand
         }
         #
         #
@@ -617,8 +617,8 @@ if (!(Test-Path $RNDRClientLaunchCommand)){$RNDRClientLaunchCommand = "$currentP
 $RNDRProcessName = Read-IniContent "rndr_app" "RNDRProcessName" 
 
 #  dual_app 
-$DualLauchCommand = Read-IniContent "dual_app" "DualLauchCommand" 
-if (!(Test-Path $DualLauchCommand)){$DualLauchCommand = "$currentPath\$DualLauchCommand"}
+$DualLaunchCommand = Read-IniContent "dual_app" "DualLaunchCommand" 
+if (!(Test-Path $DualLaunchCommand)){$DualLaunchCommand = "$currentPath\$DualLaunchCommand"}
 $DualProcessName = Read-IniContent "dual_app" "DualProcessName" 
 $DualWebAPIShutdownCommand = Read-IniContent "dual_app" "DualWebAPIShutdownCommand" 
 
