@@ -1,7 +1,7 @@
 # RNDR Watchdog (Dual Use Version)
 # Filename: RNDR_Watchdog_DualUse.ps1
 
-$Release = "v0.4.0"
+$Release = "v0.4.1"
 
 # This Windows Powershell script ensures the RenderToken RNDRclient.exe (RNDR) is running at all time and allows to start/shutdown an alternative workload (Dual) when the client signals it is idle.
 # The RNDR client won't process any job if the GPUs are under load or VRAM is used, therefore the Dual workload needs to be shut down completely before rendering.
@@ -113,31 +113,50 @@ Function Keep-RNDR-Client-Running {
         }
         else
         {
-            # Delay kill command for some time as client might just be starting up
-            if((New-TimeSpan -start $global:RNDRNotRespondedSince).TotalSeconds -gt $sleepRNDRNotResponding)
-            {
-                # Kill if still NOT RESPONDING
-                foreach ($RNDRProcess in $RNDRProcesses) 
-                {
-                    # Check if RNDR client is NOT RESPONDING.
-                    if(!$RNDRProcess.Responding)
-                    {
-
-                        Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : RNDR client is not responding. Stopping process now.
-                    
-                        # Write to log file
-                        Add-Logfile-Entry "RNDR client process not responding. Grace period over, stopping process now."
-                        
-                        $global:RNDRRestarts = $global:RNDRRestarts + 1
-
-                        Stop-Processes($RNDRProcessName)
-                        break
-                    }
+            # Check if responsive now
+            $allResponding = $true
+            foreach ($RNDRProcess in $RNDRProcesses) {
+                if (!$RNDRProcess.Responding) {
+                    $allResponding = $false
+                    break
                 }
-
-                # Set state to all processes responding
+            }
+            # If responsive now reset the timestamp
+            if ($allResponding) {
+                $duration = [Math]::Floor((New-TimeSpan -start $global:RNDRNotRespondedSince).TotalSeconds)
+                Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : RNDR client responded again after $duration seconds.
+                Add-Logfile-Entry "RNDR client responded again after $duration seconds."                
                 $global:RNDRNotRespondedSince = $null
+            }
+            else {
+                # Delay kill command for some time as client might just be starting up
+                if((New-TimeSpan -start $global:RNDRNotRespondedSince).TotalSeconds -gt $sleepRNDRNotResponding)
+                {
+                    # Kill if still NOT RESPONDING
+                    foreach ($RNDRProcess in $RNDRProcesses) 
+                    {
+                        # Check if RNDR client is NOT RESPONDING.
+                        if(!$RNDRProcess.Responding)
+                        {
 
+                            Write-Host (Get-Date -format "yyyy-MM-dd HH:mm:ss") : RNDR client is not responding. Stopping process now.
+                        
+                            # Write to log file
+                            $duration = [Math]::Floor((New-TimeSpan -start $global:RNDRNotRespondedSince).TotalSeconds)
+                            Add-Logfile-Entry "RNDR client process not responding for $duration seconds. Grace period over, stopping process now."
+
+                            
+                            $global:RNDRRestarts = $global:RNDRRestarts + 1
+
+                            Stop-Processes($RNDRProcessName)
+                            break
+                        }
+                    }
+
+                    # Set state to all processes responding
+                    $global:RNDRNotRespondedSince = $null
+
+                }
             }
         }
     }
