@@ -421,12 +421,12 @@ Function Stop-Processes {
 Function Download-Latest-Watchdog {
 
     # Get tag and download URL of the latest version
-    $tag = (Invoke-WebRequest "https://api.github.com/repos/$WatchdogGithubRepo/releases" | ConvertFrom-Json)[0].tag_name
+    $tag = (Invoke-WebRequest "https://api.github.com/repos/$WatchdogGithubRepo/releases" -UseBasicParsing | ConvertFrom-Json)[0].tag_name
     $url = "https://github.com/$WatchdogGithubRepo/archive/$tag.zip"
     $download_path = "$env:USERPROFILE\Downloads\$WatchdogGithubRepoName.zip"
 
     # Download the release
-    Invoke-WebRequest -Uri $url -OutFile $download_path
+    Invoke-WebRequest -Uri $url -OutFile $download_path -UseBasicParsing
     Get-Item $download_path | Unblock-File
 
     # Expand the zip archive and remove the version tag from the folder name
@@ -695,7 +695,7 @@ if ($WriteStatsFile -and !(Test-Path $statsFile))
 # Check tag of latest release in the Github repository
 try
 {
-    $tag = (Invoke-WebRequest "https://api.github.com/repos/$WatchdogGithubRepo/releases" -ErrorAction SilentlyContinue | ConvertFrom-Json)[0].tag_name
+    $tag = (Invoke-WebRequest "https://api.github.com/repos/$WatchdogGithubRepo/releases" -UseBasicParsing -ErrorAction SilentlyContinue | ConvertFrom-Json)[0].tag_name
 }
 catch
 {
